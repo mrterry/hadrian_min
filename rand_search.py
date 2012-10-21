@@ -1,46 +1,27 @@
 import numpy as np
-from scipy.stats import uniform
 from scipy.spatial import Delaunay
 from itertools import product
 
 
-def latin_hypercube_sample(distributions, npoints):
+def latin_sample(bounds, npoints):
     """
-    Sample ``npoints`` from a sequences of scipy.stats distributions.  Using a
-    Latin Hypercube stratified sampling method.
-
-    Parameters
-    ----------
-    distributions: list of scipy.stats distributions
-        objects with a ppf (inverse CDF) function for sampling the
-        distribution
-
-    npoints: int
-        number of points to sample / subdivisions for each dimension
-    
-    Returns
-    -------
-    samples: array shape=(npoints, len(distributions))
-        sequence of ``npoints`` points sampled from distributions
-    
-    Examples
-    --------
-    >>> dist = scipy.stats.norm(loc=20, scale=0.3)
-    >>> pts = latin_hypercube_sample([dist], 30)
+    Sample npoints from region defined by a list of extrema (bounds).
+    Performs a stratified (latin hypercube) sampling.
     """
-    ndims = len(distributions)
-    assert npoints > np.ceil(4. * ndims / 3.), "npoints is too small"
-    samples = np.empty((npoints, ndims))
+    bounds = np.array(bounds)
 
-    # break each dimension into (npoints) equal probability chunks
-    # sample from each chunk and shuffle
-    percentiles = np.linspace(0, 1, npoints + 1)
-    for d, dist in enumerate(distributions):
-        cdf_pts = np.random.uniform(percentiles[:-1], percentiles[1:])
-        samples[:, d] = dist.ppf(cdf_pts)
-        np.random.shuffle(samples[:, d])
-    
-    return samples
+    points = np.ones( (npoints, len(bounds)) )
+    points = np.linspace(0, 1, npoints+1)[:-1]
+    dx = (bounds[:, 1] - bounds[:, 0])
+    points = points[:, None] * dx[None, :]
+    points += bounds[:, 0]
+
+    rands = np.random.random(points.shape) * dx[None, :] / npoints
+    points += rands
+
+    for d in range(bounds.shape[0]):
+        np.random.shuffle(points[:, d])
+    return points
 
 
 def timing_slope(pts, t0=16.e-3, m0=25.):
@@ -87,11 +68,8 @@ def random_min(para_eval, xbnds, ybnds, xtol, ytol, swarm=8, mx_iters=5):
     # vertexes are vertex indexes
     # points are spatial coordinates
 
-    samples = [
-            uniform(xbnds[0], xbnds[1]-xbnds[0]),
-            uniform(ybnds[0], ybnds[1]-ybnds[0]),
-            ]
-    points = latin_hypercube_sample(samples, swarm)
+    bnds = np.vstack((xbnds, ybnds))
+    points = latin_sample(np.vstack((xbnds, ybnds)), swarm)
     z = para_eval(points)
 
     # exclude corners from possibilities, but add them to the triangulation
