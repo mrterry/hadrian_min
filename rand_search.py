@@ -30,11 +30,13 @@ def timing_slope(pts, t0=16.e-3, m0=25.):
 
 def sample_triangle(points):
     """
-    Sample 1 point from a given triangle
+    Sample 1 point from each of a sequence of triangles
+    np.array(points).shape = (:, 3, 2)
     """
+    points = np.array(points)
     npoints, nsides, ndims = points.shape
-    assert ndims == 2
     assert nsides == 3
+    assert ndims == 2
 
     r12 = np.random.random((npoints, 2))
     r1 = np.sqrt(r12[:, 0])
