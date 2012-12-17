@@ -60,8 +60,17 @@ def area(pts):
     return abs(ans)/2.
 
 
-@profile
-def random_min(para_eval, xbnds, ybnds, xtol, ytol, swarm=8, mx_iters=5):
+def hadrian_min(vectorized_f, xbnds, ybnds, xtol, ytol, swarm=8, mx_iters=5,
+        inc=False):
+    """
+    hadrian_min is a stochastic, hill climbing minimization algorithm.  It
+    uses a stratified sampling technique (Latin Hypercube) to get good
+    coverage of potential new points.  It also uses vectorized function
+    evaluations to drive concurrent function evaluations.
+
+    It is named after the Roman Emperor Hadrian, the most famous Latin hill
+    mountain climber of ancient times.
+    """
     assert xbnds[1] > xbnds[0]
     assert ybnds[1] > ybnds[0]
     assert xtol > 0
@@ -72,18 +81,18 @@ def random_min(para_eval, xbnds, ybnds, xtol, ytol, swarm=8, mx_iters=5):
 
     bnds = np.vstack((xbnds, ybnds))
     points = latin_sample(np.vstack((xbnds, ybnds)), swarm)
-    z = para_eval(points)
+    z = vectorized_f(points)
 
     # exclude corners from possibilities, but add them to the triangulation
     # this bounds the domain, but ensures they don't get picked
     points = np.append(points, list(product(xbnds, ybnds)), axis=0)
     z = np.append(z, 4*[z.max()])
 
-    tri = Delaunay(points)
+    tri = Delaunay(points, incremental=inc)
     del points
 
     for step in range(1, mx_iters+1):
-        i, vertexes = get_vertexes(tri, z, n_tries=4) 
+        i, vertexes = get_minimum_neighbors(tri, z)
         disp = tri.points[i] - tri.points[np.unique(vertexes)]
         disp /= np.array([xtol, ytol])
         err = err_mean(disp)
@@ -97,38 +106,30 @@ def random_min(para_eval, xbnds, ybnds, xtol, ytol, swarm=8, mx_iters=5):
         indx = np.searchsorted(bnds, np.random.rand(swarm))
 
         new_pts = sample_triangle(tri_points[indx])
-        new_z = para_eval(new_pts)
+        new_z = vectorized_f(new_pts)
 
-        points = np.append(tri.points, new_pts, axis=0)
-        tri = Delaunay(points)
+        if inc:
+            tri.add_points(new_pts)
+        else:
+            # make a new triangulation if I can't append points
+            points = np.append(tri.points, new_pts, axis=0)
+            tri = Delaunay(points)
         z = np.append(z, new_z)
 
     return None, None, tri.points, z, step
 
 
-def get_vertexes(tri, z, n_tries=4):
+def get_minimum_neighbors(tri, z):
     """
-    Sometimes a point with not be in a scipy.spatial.Delaunay triangulation.
-    Find vertex with minimum value that is actually in the triangulation.
+    Return the points-index of the vertex with minimum value and the vertexes
+    of all simplexes comtaining this point.
     """
-    i = z.argmin()
-    simplexes = (tri.vertices == i).any(1)
-    for t in range(n_tries):
-        if any(simplexes):
-            vertexes = tri.vertices[simplexes]
-            return i, vertexes
-
-        i1 = z[:i].argmin()
-        try:
-            i2 = z[i+1:].argmin()
-            if z[i1] < z[i+i2]:
-                i = i1
-            else:
-                i = i + i2
-        except:
-            i = i1
-        simplexes = (tri.vertices == i).any(1)
-    raise "can't find vertex in triangulation"
+    z_order = np.argsort(z)
+    verts_in_simplexes = np.unique(tri.vertices)
+    for i in z_order:
+        if i in verts_in_simplexes:
+            simplexes = (tri.vertices == i).any(1)
+            return i, tri.vertices[simplexes]
 
 
 def err_mean(disp):
@@ -137,16 +138,30 @@ def err_mean(disp):
     return disp.max()
 
 
-def main():
-    np.random.seed(1)
-
+def re_triangulation_test(seed=1):
+    np.random.seed(seed)
+    xbnds = (10.e-3, 25.e-3)
+    ybnds = (10, 45)
     for tmp in range(100):
-        xbnds = (10.e-3, 25.e-3)
-        ybnds = (10, 45)
-        pt, z, all_pts, all_vals, step = random_min(timing_slope,
+        pt, z, all_pts, all_vals, step = hadrian_min(timing_slope,
                 xbnds=xbnds, ybnds=ybnds,
                 xtol=50.e-6, ytol=5.,
-                mx_iters=25,
+                mx_iters=24,
+                inc=False,
                 )
+        print pt
 
-main()
+def incrementa_test(seed=1):
+    np.random.seed(seed)
+    xbnds = (10.e-3, 25.e-3)
+    ybnds = (10, 45)
+    for tmp in range(1):
+        pt, z, all_pts, all_vals, step = hadrian_min(timing_slope,
+                xbnds=xbnds, ybnds=ybnds,
+                xtol=50.e-6, ytol=5.,
+                mx_iters=24,
+                inc=True,
+                )
+        print pt
+
+incrementa_test()
